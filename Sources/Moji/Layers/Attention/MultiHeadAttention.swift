@@ -15,17 +15,17 @@ public struct MultiHeadAttention: Layer {
     public func callAsFunction(_ input: Tensor<Float>) -> Tensor<Float> {
         let qkvProjected = attention.wqkv(input)
         let qkvSplit = splitHeads(qkvProjected, headCount: headCount)
-        let qkv = Attention.QueryKeyValue.split(qkvSplit)
+        let qkv = AttentionQueryKeyValue.make(qkvSplit)
         let heads = attention.attend(query: qkv.query, key: qkv.key, value: qkv.value)
         return wo(joinHeads(heads, headCount: headCount))
     }
     
     @differentiable(wrt: (self, input))
-    public func callAsFunction(_ input: Tensor<Float>, state: inout Attention.Context) -> Tensor<Float> {
+    public func callAsFunction(_ input: Tensor<Float>, state: inout AttentionContext) -> Tensor<Float> {
         let qkvProjected = attention.wqkv(input)
         let qkvSplit = splitHeads(qkvProjected, headCount: headCount)
-        let qkv = Attention.QueryKeyValue.split(qkvSplit)
-        state = Attention.Context.make(
+        let qkv = AttentionQueryKeyValue.make(qkvSplit)
+        state = AttentionContext.make(
             key: state.key.concatenated(with: qkv.key, alongAxis: 1),
             value: state.value.concatenated(with: qkv.value, alongAxis: 1)
         )

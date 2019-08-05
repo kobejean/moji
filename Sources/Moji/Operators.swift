@@ -63,10 +63,11 @@ public func maskedSoftmax<T: TensorFlowFloatingPoint>(_ logits: Tensor<T>, mask:
     let exponentiated = exp(stable)
     let masked = exponentiated * mask
     let summed = masked.sum(alongAxes: -1)
-    return masked / summed
+    return masked ./ summed
 }
 
-public func _vjpMaskedSoftmax<T: TensorFlowFloatingPoint>(logits: Tensor<T>, mask: Tensor<T>)
+@inlinable
+internal func _vjpMaskedSoftmax<T: TensorFlowFloatingPoint>(logits: Tensor<T>, mask: Tensor<T>)
 -> (Tensor<T>, (Tensor<T>.TangentVector) -> Tensor<T>) {
     let y = maskedSoftmax(logits, mask: mask)
     return (y, { seed in (seed - (seed * y).sum(alongAxes: -1)) * y})
