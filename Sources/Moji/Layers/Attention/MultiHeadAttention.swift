@@ -1,42 +1,37 @@
 import TensorFlow
 
 public struct MultiHeadAttention: Layer {
-    var attention: Attention
-    var wo: TimeDistributed
+    var layerQKV: TimeDistributed
+    @noDerivative let attention: Attention
+    var layerO: TimeDistributed
     @noDerivative let headCount: Int
     
     public init(size: Int, headCount: Int, causal: Bool = false, dropProbability: Double = 0.2) {
+        layerQKV = TimeDistributed(Dense<Float>(inputSize: size, outputSize: size * 3))
         attention = Attention(size: size, causal: causal, dropProbability: dropProbability)
-        wo = TimeDistributed(Dense<Float>(inputSize: size, outputSize: size, activation: identity))
+        layerO = TimeDistributed(Dense<Float>(inputSize: size, outputSize: size))
         self.headCount = headCount
     }
     
-    @differentiable
+    @differentiable(wrt: (self, input))
     public func callAsFunction(_ input: Tensor<Float>) -> Tensor<Float> {
-        let qkvProjected = attention.wqkv(input)
-        let qkvSplit = splitHeads(qkvProjected, headCount: headCount)
-        let qkv = AttentionQueryKeyValue.make(qkvSplit)
-        let heads = attention.attend(query: qkv.query, key: qkv.key, value: qkv.value)
-        return wo(joinHeads(heads, headCount: headCount))
+        let qkv = layerQKV(input)
+        let heads = attention(splitHeads(qkv))
+        return layerO(joinHeads(heads))
     }
     
     @differentiable(wrt: (self, input))
     public func callAsFunction(_ input: Tensor<Float>, state: inout AttentionContext) -> Tensor<Float> {
-        let qkvProjected = attention.wqkv(input)
-        let qkvSplit = splitHeads(qkvProjected, headCount: headCount)
-        let qkv = AttentionQueryKeyValue.make(qkvSplit)
-        state = AttentionContext.make(
-            key: state.key.concatenated(with: qkv.key, alongAxis: 1),
-            value: state.value.concatenated(with: qkv.value, alongAxis: 1)
-        )
-        let heads = attention.attend(query: qkv.query, key: state.key, value: state.value)
-        return wo(joinHeads(heads, headCount: headCount))
+        let qkv = layerQKV(input)
+        let heads = attention(splitHeads(qkv), state: &state)
+        return layerO(joinHeads(heads))
     }
 
+    
     // MARK: Private Methods
 
     @differentiable(wrt: input)
-    private func splitHeads(_ input: Tensor<Float>, headCount: Int) -> Tensor<Float> {
+    private func splitHeads(_ input: Tensor<Float>) -> Tensor<Float> {
         let (batchSize, timeSteps, features) = (input.shape[0], input.shape[1], input.shape[2])
         let featuresPerHead = features / headCount
         let splitLastDim = input.reshaped(to: [batchSize, timeSteps, headCount, featuresPerHead])
@@ -45,7 +40,7 @@ public struct MultiHeadAttention: Layer {
     }
 
     @differentiable(wrt: input)
-    private func joinHeads(_ input: Tensor<Float>, headCount: Int) -> Tensor<Float> {
+    private func joinHeads(_ input: Tensor<Float>) -> Tensor<Float> {
         let (generalizedBatch, timeSteps, featuresPerHead) = (
             input.shape[0], input.shape[1], input.shape[2])
         let batchSize = generalizedBatch / headCount
