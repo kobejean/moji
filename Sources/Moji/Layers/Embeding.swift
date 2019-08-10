@@ -7,8 +7,8 @@ struct Embedding: Differentiable {
         self.weight = weight
     }
     
-    init(vocabularySize: Int, vectorSize: Int) {
-        self.weight = Tensor(randomUniform: [vocabularySize, vectorSize])
+    init(vocabSize: Int, featureSize: Int) {
+        self.weight = Tensor(randomUniform: [vocabSize, featureSize])
     }
 
     @differentiable(wrt: self)

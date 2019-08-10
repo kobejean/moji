@@ -9,37 +9,40 @@ public struct Attention: ParameterlessLayer {
     
     @noDerivative public let dropout: Dropout<Float>
     @noDerivative public let scale: Tensor<Float>
-    @noDerivative public let causal: Bool
     
     
     // MARK: Initializer
     
-    public init(size: Int, causal: Bool = false, dropProbability: Double = 0.2) {
+    public init(size: Int, dropProbability: Double = 0.2) {
         scale = Tensor(sqrt(Float(size)))
         dropout = Dropout<Float>(probability: dropProbability)
-        self.causal = causal
     }
     
     @differentiable
     public func callAsFunction(_ input: Tensor<Float>) -> Tensor<Float> {
+        return callAsFunction(input, mask: nil)
+    }
+    
+    @differentiable
+    public func callAsFunction(_ input: Tensor<Float>, mask: Tensor<Float>? = nil) -> Tensor<Float> {
         let qkv = AttentionQueryKeyValue.make(input)
-        return attend(query: qkv.query, key: qkv.key, value: qkv.value)
+        return attend(query: qkv.query, key: qkv.key, value: qkv.value, mask: mask)
     }
     
     @differentiable(wrt: (self, input))
-    public func callAsFunction(_ input: Tensor<Float>, state: inout AttentionContext) -> Tensor<Float> {
+    public func callAsFunction(_ input: Tensor<Float>, state: inout AttentionContext, mask: Tensor<Float>? = nil) -> Tensor<Float> {
         let qkv = AttentionQueryKeyValue.make(input)
         state = AttentionContext.make(
             key: state.key.concatenated(with: qkv.key, alongAxis: 1),
             value: state.value.concatenated(with: qkv.value, alongAxis: 1)
         )
-        return attend(query: qkv.query, key: state.key, value: state.value)
+        return attend(query: qkv.query, key: state.key, value: state.value, mask: mask)
     }
     
-    @differentiable
-    public func attend(query: Tensor<Float>, key: Tensor<Float>, value: Tensor<Float>) -> Tensor<Float>{
+    @differentiable(wrt: (query, key, value))
+    public func attend(query: Tensor<Float>, key: Tensor<Float>, value: Tensor<Float>, mask: Tensor<Float>? = nil) -> Tensor<Float> {
         let logits = batchedMatmul(query, key, adjointRight: true) / scale
-        let score = maskedScore(logits)
+        let score = maskedScore(logits, mask: mask)
         return batchedMatmul(dropout(score), value)
     }
     
@@ -48,21 +51,9 @@ public struct Attention: ParameterlessLayer {
     
     @inlinable
     @differentiable(wrt: logits)
-    internal func maskedScore(_ logits: Tensor<Float>) -> Tensor<Float> {
-        guard causal else { return softmax(logits) }
-        let mask = attentionMask(querySize: logits.shape[1], keySize: logits.shape[2])
+    internal func maskedScore(_ logits: Tensor<Float>, mask: Tensor<Float>? = nil) -> Tensor<Float> {
+        guard let mask = mask else { return softmax(logits) }
         return maskedSoftmax(logits, mask: mask)
-    }
-    
-    @inlinable
-    @_semantics("autodiff.nonvarying")
-    internal func attentionMask(querySize: Int, keySize: Int) -> Tensor<Float> {
-        let zero = Tensor<Int32>(0)
-        let delta = Tensor<Int32>(1)
-        let queryTime = Raw.range(start: -Tensor(Int32(querySize)), limit: zero, delta: delta).expandingShape(at: -1)
-        let keyTime = Raw.range(start: -Tensor(Int32(keySize)), limit: zero, delta: delta)
-        let mask = queryTime .>= keyTime
-        return Raw.cast(mask)
     }
 }
 

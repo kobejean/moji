@@ -12,7 +12,7 @@ final class AttentionTests: XCTestCase {
         let query = Tensor<Float>(shape: [1, 3, 3], scalars: [0, 0, 1, 0, 1, 0, 1, 0, 0]) * k
         let key = Tensor<Float>(shape: [1, 3, 3], scalars: [1, 0, 0, 0, 1, 0, 0, 0, 1]) * k
         let value = Tensor<Float>(shape: [1, 3, 3], scalars: (0..<9).map(Float.init))
-        let layer = Attention(size: value.shape[1], causal: false, dropProbability: 0.0)
+        let layer = Attention(size: value.shape[1], dropProbability: 0.0)
         // When
         let output = layer.attend(query: query, key: key, value: value)
         // Then
@@ -27,7 +27,7 @@ final class AttentionTests: XCTestCase {
         let key = Tensor<Float>(shape: [1, 3, 3], scalars: [1, 0, 0, 0, 1, 0, 0, 0, 1]) * k
         let value = Tensor<Float>(shape: [1, 3, 3], scalars: (0..<9).map(Float.init))
         let input = AttentionQueryKeyValue(query: query, key: key, value: value)
-        let layer = Attention(size: value.shape[1], causal: false, dropProbability: 0.0)
+        let layer = Attention(size: value.shape[1], dropProbability: 0.0)
         let identityMatrix = Tensor<Float>(shape: [1, 3, 3], scalars: [1, 0, 0, 0, 1, 0, 0, 0, 1])
         // When
         let output = pullback(at: input) { input in
@@ -63,10 +63,11 @@ final class AttentionTests: XCTestCase {
         let query = Tensor<Float>(shape: [1, 3, 3], scalars: [0, 1, 0, 1, 0, 0, 0, 0, 1]) * k
         let key = Tensor<Float>(shape: [1, 3, 3], scalars: [1, 0, 0, 0, 1, 0, 0, 0, 1]) * k
         let value = Tensor<Float>(shape: [1, 3, 3], scalars: (0..<9).map(Float.init))
+        let mask = causalMask(querySize: 3, keySize: 3)
         // When
-        let layer = Attention(size: value.shape[1], causal: true, dropProbability: 0.0)
+        let layer = Attention(size: value.shape[1], dropProbability: 0.0)
         // Then
-        let output = layer.attend(query: query, key: key, value: value)
+        let output = layer.attend(query: query, key: key, value: value, mask: mask)
         let expected = Tensor<Float>(shape: [1, 3, 3], scalars: [0.0, 1.0, 2.0, 1.0, 2.0, 3.0, 3.75, 4.75, 5.75])
         assertEqual(output, expected, accuracy: 1e-5)
     }
@@ -78,12 +79,13 @@ final class AttentionTests: XCTestCase {
         let key = Tensor<Float>(shape: [1, 3, 3], scalars: [1, 0, 0, 0, 1, 0, 0, 0, 1]) * k
         let value = Tensor<Float>(shape: [1, 3, 3], scalars: (0..<9).map(Float.init))
         let input = AttentionQueryKeyValue(query: query, key: key, value: value)
-        let layer = Attention(size: value.shape[1], causal: true, dropProbability: 0.0)
+        let mask = causalMask(querySize: 3, keySize: 3)
+        let layer = Attention(size: value.shape[1], dropProbability: 0.0)
         let identityMatrix = Tensor<Float>(shape: [1, 3, 3], scalars: [1, 0, 0, 0, 1, 0, 0, 0, 1])
         // When
         let output = pullback(at: input) { input in
-            layer.attend(query: input.query, key: input.key, value: input.value)
-            } (identityMatrix)
+            layer.attend(query: input.query, key: input.key, value: input.value, mask: mask)
+        } (identityMatrix)
         // Then
         let expected = AttentionQueryKeyValue.AllDifferentiableVariables(
             query: Tensor<Float>(shape: [1, 3, 3], scalars:  [
@@ -119,7 +121,7 @@ final class AttentionTests: XCTestCase {
             0, k, 0, 0, k, 0, 3, 4, 5,
             k, 0, 0, 0, 0, k, 6, 7, 8,
         ])
-        let layer = Attention(size: input.shape[1], causal: false, dropProbability: 0.0)
+        let layer = Attention(size: input.shape[1], dropProbability: 0.0)
         // When
         let output = layer(input)
         // Then
@@ -146,16 +148,17 @@ final class AttentionTests: XCTestCase {
     func testAttentionCallAsFunctionCausalPullback() {
         // Given
         let k = Float(sqrt(sqrt(3.0) * log(2)))
+        let mask = causalMask(querySize: 3, keySize: 3)
         let input = Tensor<Float>(shape: [1, 3, 9], scalars: [
             0, k, 0, k, 0, 0, 0, 1, 2,
             k, 0, 0, 0, k, 0, 3, 4, 5,
             0, 0, k, 0, 0, k, 6, 7, 8,
         ])
-        let layer = Attention(size: input.shape[1], causal: true, dropProbability: 0.0)
+        let layer = Attention(size: input.shape[1], dropProbability: 0.0)
         let identityMatrix = Tensor<Float>(shape: [1, 3, 3], scalars: [1, 0, 0, 0, 1, 0, 0, 0, 1])
         // When
         let output = pullback(at: input) { input in
-            layer(input)
+            layer(input, mask: mask)
         } (identityMatrix)
         // Then
         let expected = Tensor<Float>.AllDifferentiableVariables([

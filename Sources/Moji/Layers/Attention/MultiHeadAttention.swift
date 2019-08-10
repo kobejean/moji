@@ -6,9 +6,9 @@ public struct MultiHeadAttention: Layer {
     var deneseO: TimeDistributed
     @noDerivative let headCount: Int
     
-    public init(size: Int, headCount: Int, causal: Bool = false, dropProbability: Double = 0.2) {
+    public init(size: Int, headCount: Int, dropProbability: Double = 0.2) {
         denseQKV = TimeDistributed(Dense<Float>(inputSize: size, outputSize: size * 3))
-        attention = Attention(size: size, causal: causal, dropProbability: dropProbability)
+        attention = Attention(size: size, dropProbability: dropProbability)
         deneseO = TimeDistributed(Dense<Float>(inputSize: size, outputSize: size))
         self.headCount = headCount
     }
@@ -21,9 +21,9 @@ public struct MultiHeadAttention: Layer {
     }
     
     @differentiable(wrt: (self, input))
-    public func callAsFunction(_ input: Tensor<Float>, state: inout AttentionContext) -> Tensor<Float> {
+    public func callAsFunction(_ input: Tensor<Float>, state: inout AttentionContext, mask: Tensor<Float>? = nil) -> Tensor<Float> {
         let qkv = denseQKV(input)
-        let heads = attention(splitHeads(qkv), state: &state)
+        let heads = attention(splitHeads(qkv), state: &state, mask: mask)
         return deneseO(joinHeads(heads))
     }
 

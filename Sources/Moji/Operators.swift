@@ -72,3 +72,14 @@ internal func _vjpMaskedSoftmax<T: TensorFlowFloatingPoint>(logits: Tensor<T>, m
     let y = maskedSoftmax(logits, mask: mask)
     return (y, { seed in (seed - (seed * y).sum(alongAxes: -1)) * y})
 }
+
+@inlinable
+@_semantics("autodiff.nonvarying")
+internal func causalMask(querySize: Int, keySize: Int) -> Tensor<Float> {
+    let zero = Tensor<Int32>(0)
+    let delta = Tensor<Int32>(1)
+    let queryTime = Raw.range(start: -Tensor(Int32(querySize)), limit: zero, delta: delta).expandingShape(at: -1)
+    let keyTime = Raw.range(start: -Tensor(Int32(keySize)), limit: zero, delta: delta)
+    let mask = queryTime .>= keyTime
+    return Raw.cast(mask)
+}
