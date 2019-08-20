@@ -1,6 +1,6 @@
 # Moji
 
-A swift package for natural language processing
+A library for natural language processing
 
 ## Developement
 
